@@ -10,3 +10,5 @@ keywords = [ ]
 [dependencies]
 cpal = "0.14"
 iced = "0.7"
+fast_log = "1.5"
+log = "0.4"
