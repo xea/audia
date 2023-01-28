@@ -1,68 +1,75 @@
-use cpal::{available_hosts, default_host};
-use iced::{Alignment, Application, Command, Element, Error, executor, Renderer, Sandbox, Settings, Theme};
-use iced::widget::{button, column};
+use cpal::{HostId};
+use iced::{Alignment, Application, Command, Element, Error, executor, Settings, Theme};
+use iced::widget::{button, Column, Text};
 
 #[derive(Debug, PartialOrd, PartialEq, Clone, Copy)]
-pub enum Message {
+pub enum UIMessage {
     ButtonPressed
 }
 
-pub struct Audia {
+pub trait Engine {
+    fn get_available_hosts(&self) -> Vec<String>;
 }
 
 #[derive(Default)]
+pub struct CpalEngine {
+    current_host: Option<HostId>
+}
+
+impl CpalEngine {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+
+impl Engine for CpalEngine {
+    fn get_available_hosts(&self) -> Vec<String> {
+        cpal::available_hosts()
+            .iter()
+            .map(|host_id| host_id.name())
+            .map(|name| name.into())
+            .collect()
+    }
+}
+
+pub struct Audia {
+    params: AudiaParams
+}
+
 pub struct AudiaParams {
-    available_hosts: Vec<String>
+    engine: Box<dyn Engine>,
 }
 
 impl Application for Audia {
     type Executor = executor::Default;
-    type Theme = Theme;
     type Message = ();
+    type Theme = Theme;
     type Flags = AudiaParams;
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
-        (Self {}, Command::none())
+        (Self { params: flags }, Command::none())
     }
 
     fn title(&self) -> String {
         String::from("Audia")
     }
 
-    fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
+    fn update(&mut self, _message: Self::Message) -> Command<Self::Message> {
         Command::none()
     }
 
-    fn view(&self) -> Element<'_, Self::Message, Renderer<Self::Theme>> {
-        "Hello".into()
-    }
-}
-
-pub struct MainWindow {
-
-}
-
-impl Sandbox for MainWindow {
-    type Message = Message;
-
-    fn new() -> Self {
-        Self {}
-    }
-
-    fn title(&self) -> String {
-        "Audia Sandbox".to_string()
-    }
-
-    fn update(&mut self, message: Self::Message) {
-        match message {
-            Message::ButtonPressed => {}
-        }
-    }
-
     fn view(&self) -> Element<Self::Message> {
-        column![
-            button("+").on_press(Message::ButtonPressed)
-        ]
+        let hosts = self.params.engine.get_available_hosts();
+
+        let mut column = Column::new();
+
+        for host in hosts {
+            column = column.push(Text::new(host));
+        }
+
+        column
+            .push(button("Use host").on_press(()))
             .padding(20)
             .align_items(Alignment::Center)
             .into()
@@ -70,16 +77,13 @@ impl Sandbox for MainWindow {
 }
 
 fn main() -> Result<(), Error> {
-    let default_host = default_host();
-    let hosts = available_hosts();
+    let engine = CpalEngine::new();
 
     let flags = AudiaParams {
-        available_hosts: hosts.iter().map(|host| host.name().into()).collect()
+        engine: Box::new(engine)
     };
 
-    let mut settings = Settings::default();
-
-    settings.flags = flags;
+    let settings = Settings::with_flags(flags);
 
     Audia::run(settings)
 }
