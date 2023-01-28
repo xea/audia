@@ -1,6 +1,6 @@
 use cpal::{HostId};
-use iced::{Alignment, Application, Command, Element, Error, executor, Renderer, Settings, Theme};
-use iced::widget::{button, checkbox, Column, pick_list, PickList, Text};
+use iced::{Alignment, Application, Command, Element, Error, executor, Settings, Theme};
+use iced::widget::{button, Column, pick_list};
 
 #[derive(Debug, PartialOrd, PartialEq, Clone)]
 pub enum UIMessage {
@@ -9,6 +9,8 @@ pub enum UIMessage {
 }
 
 pub trait Engine {
+    fn use_engine(&mut self, host_id: &str);
+    fn get_current_engine(&self) -> Option<&str>;
     fn get_available_hosts(&self) -> Vec<String>;
 }
 
@@ -23,15 +25,19 @@ impl CpalEngine {
     }
 }
 
-pub struct DummyEngine;
-
-impl Engine for DummyEngine {
-    fn get_available_hosts(&self) -> Vec<String> {
-        vec![ String::from("Dummy") ]
-    }
-}
-
 impl Engine for CpalEngine {
+    fn use_engine(&mut self, host_id: &str) {
+        for host in cpal::available_hosts() {
+            if host.name().eq(host_id) {
+                self.current_host = Some(host)
+            }
+        }
+    }
+
+    fn get_current_engine(&self) -> Option<&str> {
+        self.current_host.map(|h| h.name())
+    }
+
     fn get_available_hosts(&self) -> Vec<String> {
         cpal::available_hosts()
             .iter()
@@ -50,16 +56,6 @@ pub struct Audia {
 }
 
 impl Audia {
-
-    fn view_a(&self) -> Element<UIMessage> {
-        Column::new()
-            .push(pick_list(self.params.engine.get_available_hosts(), None, UIMessage::HostChanged).placeholder("Choose an audio host"))
-            .push(button("Use host").on_press(UIMessage::ButtonPressed))
-            .padding(20)
-            .spacing(10)
-            .align_items(Alignment::Center)
-            .into()
-    }
 }
 
 impl Application for Audia {
@@ -76,12 +72,24 @@ impl Application for Audia {
         String::from("Audia")
     }
 
-    fn update(&mut self, _message: Self::Message) -> Command<Self::Message> {
+    fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
+        match message {
+            UIMessage::HostChanged(new_host) => {
+                self.params.engine.use_engine(new_host.as_str());
+            }
+            _ => {}
+        }
         Command::none()
     }
 
     fn view(&self) -> Element<Self::Message> {
-        self.view_a()
+        Column::new()
+            .push(pick_list(self.params.engine.get_available_hosts(), self.params.engine.get_current_engine().map(|e| e.into()), UIMessage::HostChanged).placeholder("Choose an audio host"))
+            .push(button("Use host").on_press(UIMessage::ButtonPressed))
+            .padding(20)
+            .spacing(10)
+            .align_items(Alignment::Center)
+            .into()
     }
 
 }
