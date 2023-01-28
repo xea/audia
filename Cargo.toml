@@ -1,0 +1,12 @@
+[package]
+name = "audia"
+version = "0.1.0"
+edition = "2021"
+authors = [ "Alex Pecsi <alex.pecsi@gmail.com>" ]
+keywords = [ ]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cpal = "0.14"
+iced = "0.7"
