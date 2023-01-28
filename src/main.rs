@@ -1,10 +1,11 @@
 use cpal::{HostId};
-use iced::{Alignment, Application, Command, Element, Error, executor, Settings, Theme};
-use iced::widget::{button, Column, Text};
+use iced::{Alignment, Application, Command, Element, Error, executor, Renderer, Settings, Theme};
+use iced::widget::{button, checkbox, Column, pick_list, PickList, Text};
 
-#[derive(Debug, PartialOrd, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialOrd, PartialEq, Clone)]
 pub enum UIMessage {
-    ButtonPressed
+    ButtonPressed,
+    HostChanged(String)
 }
 
 pub trait Engine {
@@ -22,6 +23,13 @@ impl CpalEngine {
     }
 }
 
+pub struct DummyEngine;
+
+impl Engine for DummyEngine {
+    fn get_available_hosts(&self) -> Vec<String> {
+        vec![ String::from("Dummy") ]
+    }
+}
 
 impl Engine for CpalEngine {
     fn get_available_hosts(&self) -> Vec<String> {
@@ -33,17 +41,30 @@ impl Engine for CpalEngine {
     }
 }
 
-pub struct Audia {
-    params: AudiaParams
-}
-
 pub struct AudiaParams {
     engine: Box<dyn Engine>,
 }
 
+pub struct Audia {
+    params: AudiaParams
+}
+
+impl Audia {
+
+    fn view_a(&self) -> Element<UIMessage> {
+        Column::new()
+            .push(pick_list(self.params.engine.get_available_hosts(), None, UIMessage::HostChanged).placeholder("Choose an audio host"))
+            .push(button("Use host").on_press(UIMessage::ButtonPressed))
+            .padding(20)
+            .spacing(10)
+            .align_items(Alignment::Center)
+            .into()
+    }
+}
+
 impl Application for Audia {
     type Executor = executor::Default;
-    type Message = ();
+    type Message = UIMessage;
     type Theme = Theme;
     type Flags = AudiaParams;
 
@@ -60,20 +81,9 @@ impl Application for Audia {
     }
 
     fn view(&self) -> Element<Self::Message> {
-        let hosts = self.params.engine.get_available_hosts();
-
-        let mut column = Column::new();
-
-        for host in hosts {
-            column = column.push(Text::new(host));
-        }
-
-        column
-            .push(button("Use host").on_press(()))
-            .padding(20)
-            .align_items(Alignment::Center)
-            .into()
+        self.view_a()
     }
+
 }
 
 fn main() -> Result<(), Error> {
