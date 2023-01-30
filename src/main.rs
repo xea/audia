@@ -49,7 +49,7 @@ fn main() -> Result<(), Error> {
     let frequency_spectrum = spectrum_result.expect("Failed to get frequency spectrum");
 
     // initialise channels
-    let (tx, rx) = std::sync::mpsc::channel();
+    let (tx, rx) = crossbeam_channel::unbounded();
 
     // initialise engine
     let engine = engine::CpalEngine::new(tx);

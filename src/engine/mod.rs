@@ -1,8 +1,7 @@
-use std::ops::Deref;
-use std::sync::{Arc, RwLock};
-use std::sync::mpsc::Sender;
+use std::sync::Arc;
 use cpal::{Device, HostId};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use crossbeam_channel::Sender;
 
 pub trait Engine {
     fn use_engine(&mut self, host_id: &str);
@@ -20,7 +19,7 @@ pub trait Engine {
 pub struct CpalEngine {
     current_host: Option<HostId>,
     current_input_device: Option<Device>,
-    tx: Sender<Vec<f32>>
+    tx: Arc<Sender<Vec<f32>>>
 }
 
 impl CpalEngine {
@@ -28,7 +27,7 @@ impl CpalEngine {
         Self {
             current_host: None,
             current_input_device: None,
-            tx: tx
+            tx: Arc::new(tx)
         }
     }
 }
@@ -104,14 +103,12 @@ impl Engine for CpalEngine {
                     log::error!("An error occurred during reading from the stream: {:?}", err);
                 };
 
-                let mut raw_data: Vec<f32> = vec![];
+                let tx = self.tx.clone();
 
-                let (tx, rx) = std::sync::mpsc::channel::<u32>();
-
-
-                handle.join().expect("Hehe");
-
-                let stream_result = device.build_input_stream(&config.into(), move |_data: &[f32], _info| {
+                let stream_result = device.build_input_stream(&config.into(), move |data: &[f32], _info| {
+                    if let Err(error) = tx.send(data.into()) {
+                        log::error!("Failed to send stream data: {error:?}");
+                    }
                     //log::info!("Read data: {:?} from thread {:?}", _data, std::thread::current().id());
                 }, err_fn, None);
 
@@ -125,7 +122,7 @@ impl Engine for CpalEngine {
                             std::thread::sleep(std::time::Duration::from_secs(1));
                             drop(stream);
 
-                            log::info!("Playing completed, read {} values", &raw_data.len());
+                            log::info!("Playing completed, read values");
                         }
                     }
                     Err(err) => {

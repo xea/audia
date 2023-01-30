@@ -1,4 +1,4 @@
-use std::sync::mpsc::Receiver;
+use crossbeam_channel::Receiver;
 use iced::{Alignment, Application, Command, Element, executor, Length, Theme};
 use iced::widget::{button, Column, pick_list};
 use plotters::series::LineSeries;
