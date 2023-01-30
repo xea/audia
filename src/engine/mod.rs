@@ -11,6 +11,7 @@ pub trait Engine {
     fn use_input_device(&mut self, device_name: String);
 
     fn start_recording(&mut self);
+    fn stop_recording(&mut self);
 }
 
 #[derive(Default)]
@@ -121,5 +122,9 @@ impl Engine for CpalEngine {
                 }
             }
         }
+    }
+
+    fn stop_recording(&mut self) {
+        todo!()
     }
 }
