@@ -32,11 +32,13 @@ impl Chart<UIMessage> for FreqAnalysis {
     fn build_chart<DB: DrawingBackend>(&self, _state: &Self::State, mut builder: ChartBuilder<DB>) {
         let mut chart = builder
             .set_all_label_area_size(40)
-            .build_cartesian_2d(0..2000, 0..100)
+            .build_cartesian_2d(0..4000, 0..100)
             .expect("Failed to build chart");
 
         //let series = LineSeries::new((0..100).map(|x| (x, 100 - x)), &BLACK);
         let series = LineSeries::new(self.spectrum.iter().map(|(freq, amp)| (*freq as i32, *amp as i32)), &BLACK);
+
+        println!("{:?}", self.spectrum);
 
         chart.configure_mesh().draw().expect("Failed to draw mesh");
 
@@ -251,19 +253,22 @@ impl Application for Audia {
 fn main() -> Result<(), Error> {
     let mut samples = [0.0; 4096];
 
-    let sample_rate: f32 = 44100.0;
-    let frequency: f32 = 880.0;
-    let increment: f32 = sample_rate / (frequency * 2.0 * PI);
 
-    println!("Increment: {increment}");
+    let sample_rate: f32 = 44100.0;
+    let frequency1: f32 = 440.0;
+    let frequency2: f32 = 2000.0;
+    let increment1: f32 = (frequency1 * 2.0 * PI) / sample_rate;
+    let increment2: f32 = (frequency2 * 2.0 * PI) / sample_rate;
+
+    println!("Increment: {increment1}");
 
     for i in 0..4096 {
-        samples[i] = (increment * i as f32).sin();
+        samples[i] = (increment1 * i as f32).sin() + (increment2 * i as f32).sin();
     }
 
     let hann_window = hann_window(&samples);
 
-    let spectrum_result = samples_fft_to_spectrum(&hann_window, 44100, FrequencyLimit::Max(2000.0), Some(&divide_by_N));
+    let spectrum_result = samples_fft_to_spectrum(&hann_window, 44100, FrequencyLimit::Max(4000.0), Some(&divide_by_N));
 
     if let Err(error) = &spectrum_result {
         log::error!("Failed to get frequency spectrum: {error:?}");
@@ -292,7 +297,7 @@ fn main() -> Result<(), Error> {
 
     let flags = AudiaParams {
         engine: Box::new(engine),
-        frequency_spectrum: frequency_spectrum.data().iter().map(|(freq, amp)| (freq.val(), amp.val())).collect()
+        frequency_spectrum: frequency_spectrum.data().iter().map(|(freq, amp)| (freq.val(), amp.val() * 100.0)).collect()
     };
 
     let settings = Settings::with_flags(flags);
