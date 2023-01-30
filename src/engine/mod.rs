@@ -1,3 +1,6 @@
+use std::ops::Deref;
+use std::sync::{Arc, RwLock};
+use std::sync::mpsc::Sender;
 use cpal::{Device, HostId};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
@@ -14,15 +17,19 @@ pub trait Engine {
     fn stop_recording(&mut self);
 }
 
-#[derive(Default)]
 pub struct CpalEngine {
     current_host: Option<HostId>,
-    current_input_device: Option<Device>
+    current_input_device: Option<Device>,
+    tx: Sender<Vec<f32>>
 }
 
 impl CpalEngine {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(tx: Sender<Vec<f32>>) -> Self {
+        Self {
+            current_host: None,
+            current_input_device: None,
+            tx: tx
+        }
     }
 }
 
@@ -99,8 +106,13 @@ impl Engine for CpalEngine {
 
                 let mut raw_data: Vec<f32> = vec![];
 
+                let (tx, rx) = std::sync::mpsc::channel::<u32>();
+
+
+                handle.join().expect("Hehe");
+
                 let stream_result = device.build_input_stream(&config.into(), move |_data: &[f32], _info| {
-                    //log::info!("Read data: {:?}", data);
+                    //log::info!("Read data: {:?} from thread {:?}", _data, std::thread::current().id());
                 }, err_fn, None);
 
                 match stream_result {
@@ -110,7 +122,7 @@ impl Engine for CpalEngine {
                         } else {
                             log::info!("Playing");
 
-                            std::thread::sleep(std::time::Duration::from_secs(3));
+                            std::thread::sleep(std::time::Duration::from_secs(1));
                             drop(stream);
 
                             log::info!("Playing completed, read {} values", &raw_data.len());

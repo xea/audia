@@ -1,3 +1,4 @@
+use std::sync::mpsc::Receiver;
 use iced::{Alignment, Application, Command, Element, executor, Length, Theme};
 use iced::widget::{button, Column, pick_list};
 use plotters::series::LineSeries;
@@ -46,7 +47,8 @@ pub enum UIMessage {
 
 pub struct AudiaParams {
     pub engine: Box<dyn crate::engine::Engine>,
-    pub frequency_spectrum: Vec<(f32, f32)>
+    pub frequency_spectrum: Vec<(f32, f32)>,
+    pub rx: Receiver<Vec<f32>>
 }
 
 pub struct Audia {

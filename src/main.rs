@@ -48,16 +48,21 @@ fn main() -> Result<(), Error> {
 
     let frequency_spectrum = spectrum_result.expect("Failed to get frequency spectrum");
 
+    // initialise channels
+    let (tx, rx) = std::sync::mpsc::channel();
+
     // initialise engine
-    let engine = engine::CpalEngine::new();
+    let engine = engine::CpalEngine::new(tx);
 
     // run UI
     let flags = ui::AudiaParams {
         engine: Box::new(engine),
-        frequency_spectrum: frequency_spectrum.data().iter().map(|(freq, amp)| (freq.val(), amp.val() * 100.0)).collect()
+        frequency_spectrum: frequency_spectrum.data().iter().map(|(freq, amp)| (freq.val(), amp.val() * 100.0)).collect(),
+        rx
     };
 
     let settings = Settings::with_flags(flags);
 
+    // Note: the UI must run on the main thread
     ui::Audia::run(settings)
 }
