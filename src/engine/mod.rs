@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use cpal::{Device, HostId};
+use cpal::{Device, HostId, Stream};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::Sender;
 
@@ -19,7 +19,8 @@ pub trait Engine {
 pub struct CpalEngine {
     current_host: Option<HostId>,
     current_input_device: Option<Device>,
-    tx: Arc<Sender<Vec<f32>>>
+    tx: Arc<Sender<Vec<f32>>>,
+    current_stream: Option<Stream>
 }
 
 impl CpalEngine {
@@ -27,7 +28,8 @@ impl CpalEngine {
         Self {
             current_host: None,
             current_input_device: None,
-            tx: Arc::new(tx)
+            tx: Arc::new(tx),
+            current_stream: None
         }
     }
 }
@@ -109,7 +111,6 @@ impl Engine for CpalEngine {
                     if let Err(error) = tx.send(data.into()) {
                         log::error!("Failed to send stream data: {error:?}");
                     }
-                    //log::info!("Read data: {:?} from thread {:?}", _data, std::thread::current().id());
                 }, err_fn, None);
 
                 match stream_result {
@@ -117,10 +118,9 @@ impl Engine for CpalEngine {
                         if let Err(error) = stream.play() {
                             log::error!("Failed to play stream: {:?}", error);
                         } else {
+                            self.current_stream = Some(stream);
                             log::info!("Playing");
 
-                            std::thread::sleep(std::time::Duration::from_secs(1));
-                            drop(stream);
 
                             log::info!("Playing completed, read values");
                         }
@@ -134,6 +134,13 @@ impl Engine for CpalEngine {
     }
 
     fn stop_recording(&mut self) {
-        todo!()
+        let mut maybe_stream = None;
+        std::mem::swap(&mut maybe_stream, &mut self.current_stream);
+
+        if let Some(stream) = maybe_stream {
+            drop(stream);
+
+            log::info!("Streaming stopped");
+        }
     }
 }

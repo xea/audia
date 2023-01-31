@@ -1,5 +1,5 @@
 use crossbeam_channel::Receiver;
-use iced::{Alignment, Application, Command, Element, executor, Length, Theme};
+use iced::{Alignment, Application, Command, Element, executor, Length, Subscription, Theme};
 use iced::widget::{button, Column, pick_list};
 use plotters::series::LineSeries;
 use plotters::style::BLACK;
@@ -42,18 +42,20 @@ pub enum UIMessage {
     HostChanged(String),
     InputDeviceChanged(String),
     RecordingStarted,
+    RecordingStopped,
     DummyMessage
 }
 
 pub struct AudiaParams {
     pub engine: Box<dyn crate::engine::Engine>,
     pub frequency_spectrum: Vec<(f32, f32)>,
-    pub rx: Receiver<Vec<f32>>
+    pub rx: Receiver<Vec<f32>>,
 }
 
 pub struct Audia {
     params: AudiaParams,
-    freq_anal: FreqAnalysis
+    freq_anal: FreqAnalysis,
+    playing: bool
 }
 
 impl Audia {
@@ -68,7 +70,11 @@ impl Application for Audia {
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
         let spectrum = flags.frequency_spectrum.clone();
 
-        (Self { params: flags, freq_anal: FreqAnalysis { spectrum } }, Command::none())
+        (Self {
+            params: flags,
+            freq_anal: FreqAnalysis { spectrum },
+            playing: false
+        }, Command::none())
     }
 
     fn title(&self) -> String {
@@ -84,7 +90,12 @@ impl Application for Audia {
                 self.params.engine.use_input_device(device_name);
             }
             UIMessage::RecordingStarted => {
+                self.playing = true;
                 self.params.engine.start_recording();
+            }
+            UIMessage::RecordingStopped => {
+                self.playing = false;
+                self.params.engine.stop_recording();
             }
             _ => {
                 log::info!("Unknown event: {:?}", message);
@@ -94,6 +105,11 @@ impl Application for Audia {
     }
 
     fn view(&self) -> Element<Self::Message> {
+        let button = if self.playing {
+            button("Stop").on_press(UIMessage::RecordingStopped)
+        } else {
+            button("Record").on_press(UIMessage::RecordingStarted)
+        };
         Column::new()
             .push(
                 pick_list(
@@ -107,12 +123,20 @@ impl Application for Audia {
                     self.params.engine.get_current_input_device(),
                     UIMessage::InputDeviceChanged)
                     .placeholder("Choose an input device"))
-            .push(button("Record").on_press(UIMessage::RecordingStarted))
+            .push(button)
+            //.push(button("Record").on_press(UIMessage::RecordingStarted))
             .push(self.freq_anal.view())
             //.push(FreqAnalysis { spectrum: self.params.frequency_spectrum.clone() }.view())
             .padding(20)
             .spacing(10)
             .align_items(Alignment::Center)
             .into()
+    }
+
+    fn subscription(&self) -> Subscription<Self::Message> {
+        match self.playing {
+            true => Subscription::none(),
+            false => Subscription::none()
+        }
     }
 }
