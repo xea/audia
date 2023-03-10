@@ -9,13 +9,14 @@ keywords = [ ]
 
 [dependencies]
 cpal = "0.15"
-iced = "0.7"
+iced = { version = "0.7", features = [ "smol" ] }
 plotters = { version = "0.3.4", default_features = false, features = [ "line_series" ] }
 plotters-iced = "0.6"
 fast_log = "1.5"
 log = "0.4"
 
 crossbeam-channel = "0.5"
+ringbuf = "0.3"
 
 #rustfft = "6.1.0"
 spectrum-analyzer = "1.2"

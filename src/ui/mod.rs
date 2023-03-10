@@ -1,9 +1,45 @@
+use std::time::Duration;
 use crossbeam_channel::Receiver;
 use iced::{Alignment, Application, Command, Element, executor, Length, Subscription, Theme};
-use iced::widget::{button, Column, pick_list};
+use iced::time as iced_time;
+use iced::widget::{button, Column, pick_list, text};
 use plotters::series::LineSeries;
 use plotters::style::BLACK;
 use plotters_iced::{Chart, ChartBuilder, ChartWidget, DrawingBackend};
+use ringbuf::{HeapRb, Rb};
+
+pub struct FreqLog {
+    pub log: [u16; 4096],
+    pub idx: usize
+}
+
+impl FreqLog {
+    pub fn view(&self) -> Element<UIMessage> {
+        ChartWidget::new(self)
+            .width(Length::Units(1000))
+            .height(Length::Units(200))
+            .into()
+    }
+}
+
+impl Chart<UIMessage> for FreqLog {
+    type State = ();
+
+    fn build_chart<DB: DrawingBackend>(&self, state: &Self::State, mut builder: ChartBuilder<DB>) {
+        let mut chart = builder
+            .set_all_label_area_size(40)
+            .build_cartesian_2d(0..4096, 0..65535)
+            .expect("Failed to build chart");
+
+        let series = LineSeries::new(self.log.iter().enumerate().map(|(x, y)| (x as i32, *y as i32)), &BLACK);
+        //let series = LineSeries::new(self.log.iter().map(|val| (*freq as i32, *amp as i32)), &BLACK);
+
+        chart.configure_mesh().draw().expect("Failed to draw mesh");
+
+        chart.draw_series(series)
+            .expect("Failed to draw series");
+    }
+}
 
 pub struct FreqAnalysis {
     pub spectrum: Vec<(f32, f32)>
@@ -43,6 +79,7 @@ pub enum UIMessage {
     InputDeviceChanged(String),
     RecordingStarted,
     RecordingStopped,
+    Tick,
     DummyMessage
 }
 
@@ -55,7 +92,9 @@ pub struct AudiaParams {
 pub struct Audia {
     params: AudiaParams,
     freq_anal: FreqAnalysis,
-    playing: bool
+    freq_log: FreqLog,
+    playing: bool,
+    tick_received: u32
 }
 
 impl Audia {
@@ -73,7 +112,9 @@ impl Application for Audia {
         (Self {
             params: flags,
             freq_anal: FreqAnalysis { spectrum },
-            playing: false
+            freq_log: FreqLog { log: [0; 4096], idx: 0 },
+            playing: false,
+            tick_received: 0
         }, Command::none())
     }
 
@@ -96,6 +137,15 @@ impl Application for Audia {
             UIMessage::RecordingStopped => {
                 self.playing = false;
                 self.params.engine.stop_recording();
+            }
+            UIMessage::Tick => {
+                self.tick_received += 1;
+                {
+                    if let Ok(data) = self.params.rx.recv() {
+                        self.freq_log.log[self.freq_log.idx % 4096] = data.len().min(65535) as u16;
+                        self.freq_log.idx += 1;
+                    }
+                }
             }
             _ => {
                 log::info!("Unknown event: {:?}", message);
@@ -125,8 +175,10 @@ impl Application for Audia {
                     .placeholder("Choose an input device"))
             .push(button)
             //.push(button("Record").on_press(UIMessage::RecordingStarted))
+            .push(self.freq_log.view())
             .push(self.freq_anal.view())
             //.push(FreqAnalysis { spectrum: self.params.frequency_spectrum.clone() }.view())
+            .push(text(format!("Received ticks: {}", self.tick_received)))
             .padding(20)
             .spacing(10)
             .align_items(Alignment::Center)
@@ -135,7 +187,7 @@ impl Application for Audia {
 
     fn subscription(&self) -> Subscription<Self::Message> {
         match self.playing {
-            true => Subscription::none(),
+            true => iced_time::every(Duration::from_millis(10)).map(|_| UIMessage::Tick),
             false => Subscription::none()
         }
     }
