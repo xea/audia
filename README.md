@@ -1,2 +1,2 @@
 # audia
-Explorations in the world of sound
+Explorations in the world of sound.
