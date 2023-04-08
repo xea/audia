@@ -5,7 +5,6 @@ use fast_log::consts::LogSize;
 use fast_log::filter::ModuleFilter;
 use iced::{Application, Error, Settings};
 use log::LevelFilter;
-use ringbuf::HeapRb;
 use crate::engine::{AudioSettings, AudioSystem};
 use crate::ui::UIParams;
 

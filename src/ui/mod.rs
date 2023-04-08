@@ -1,12 +1,8 @@
-use std::mem;
-use std::thread::{JoinHandle};
 use std::time::Duration;
 
 use iced::{Alignment, Application, Command, Element, executor, Subscription, Theme};
 use iced::time as iced_time;
 use iced::widget::{button, Column, text};
-use plotters_iced::{DrawingBackend};
-use ringbuf::{HeapRb, Rb};
 use crate::engine::{AudioStream, AudioSystem};
 
 use crate::ui::spectrogram::Spectrogram;
@@ -34,7 +30,6 @@ pub enum UIMessage {
 }
 
 pub struct Audia {
-    stream_thread: Option<JoinHandle<()>>,
     spectrogram: Spectrogram,
     audio_system: AudioSystem,
     current_stream: Option<AudioStream>
@@ -44,22 +39,10 @@ impl Audia {
     fn start_streaming(&mut self) {
         log::info!("Start streaming");
 
-        if self.stream_thread.is_none() {
+        if self.current_stream.is_none() {
             match self.audio_system.engine.start_recording() {
                 Ok(stream) => {
                     self.current_stream = Some(stream);
-                    /*
-                    let thread = std::thread::spawn(move || {
-                        loop {
-                            if let Ok(package) = stream.receive() {
-                                self.spectrogram.user_data += package.len();
-                                log::info!("Actually got packet");
-                            }
-                        }
-                    });
-
-                    self.stream_thread = Some(thread);
-                     */
                 },
                 Err(error) => {
                     log::error!("Error jaj");
@@ -76,8 +59,6 @@ impl Audia {
 
         if self.current_stream.is_some() {
             self.current_stream = None;
-            //let handle = mem::replace(&mut self.stream_thread, None).unwrap();
-            //let _ = handle.join();
         } else {
             log::info!("Stream has not been stopped");
         }
@@ -108,7 +89,6 @@ impl Application for Audia {
         let audio_system = flags.audio_system;
 
         (Self {
-            stream_thread: None,
             spectrogram: Spectrogram::new(),
             current_stream: None,
             audio_system
@@ -165,7 +145,7 @@ impl Application for Audia {
 
     fn subscription(&self) -> Subscription<Self::Message> {
         if self.current_stream.is_some() {
-            let duration = Duration::from_millis(50);
+            let duration = Duration::from_millis(5);
             iced_time::every(duration).map(|_instant| UIMessage::StreamTick)
         } else {
             Subscription::none()

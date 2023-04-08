@@ -1,6 +1,6 @@
 use cpal::{Device, HostId, Stream, StreamError};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use crossbeam_channel::{Receiver, RecvError};
+use crossbeam_channel::{Receiver, RecvError, TryRecvError};
 use ringbuf::HeapRb;
 
 pub type AudioHostName = String;
@@ -156,18 +156,18 @@ impl Engine for CpalEngine {
                 };
 
                 let (tx, rx) = crossbeam_channel::unbounded::<PacketType>();
+                let mut counter = 0;
 
                 let stream_result = device
                     .build_input_stream(
                         &config.into(),
                         move |data: &[SampleType], _info| {
-                            /*
-                            let sindata = (0..512).map(|i| i as f32)
-                                .map(|i| i.sin())
-                                .map(|i| i + 1.0)
-                                .collect();
-                            let _ = tx.send(sindata);
-                             */
+                            counter += 1;
+
+                            if counter % 100 == 0 {
+                                println!("Current queue size: {}", tx.len());
+                            }
+
                             if let Err(error) = tx.send(data.into()) {
                                 log::error!("Failed to send stream data: {error:?}");
                             }
@@ -214,7 +214,7 @@ pub struct AudioSystem {
 }
 
 impl AudioSystem {
-    pub fn new(settings: AudioSettings) -> Self {
+    pub fn new(_settings: AudioSettings) -> Self {
         AudioSystem {
             engine: Box::new(CpalEngine::default()),
             stream: vec![]
@@ -235,7 +235,7 @@ impl AudioStream {
         }
     }
 
-    pub fn receive(&self) -> Result<PacketType, RecvError> {
-        self.rx.recv()
+    pub fn receive(&self) -> Result<PacketType, TryRecvError> {
+        self.rx.try_recv()
     }
 }
