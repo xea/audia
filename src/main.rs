@@ -1,68 +1,61 @@
-use std::f32::consts::PI;
+use std::str::FromStr;
 
 use fast_log::Config;
+use fast_log::consts::LogSize;
 use fast_log::filter::ModuleFilter;
 use iced::{Application, Error, Settings};
 use log::LevelFilter;
-use spectrum_analyzer::{FrequencyLimit, samples_fft_to_spectrum};
-use spectrum_analyzer::scaling::divide_by_N;
-use spectrum_analyzer::windows::hann_window;
+use ringbuf::HeapRb;
+use crate::engine::{AudioSettings, AudioSystem};
+use crate::ui::UIParams;
 
 mod engine;
 mod ui;
 
-fn generate_sine_wave(frequencies: Vec<f32>, sample_rate: f32) -> [f32; 4096] {
-    let mut samples = [0.0; 4096];
+pub const APP_NAME: &str = "audia";
 
-    let increments: Vec<f32> = frequencies.iter().map(|frequency| (frequency * 2.0 * PI) / sample_rate).collect();
+struct AppConfig {}
 
-    for (i, sample) in samples.iter_mut().enumerate() {
-        for increment in &increments {
-            *sample += (increment * i as f32).sin();
+/// Provide configuration for the global logger, such as log levels, log file name, etc.
+struct LogConfig<'a> {
+    log_file_name: &'a str,
+    max_log_size_mb: usize,
+    log_level: &'a str,
+}
+
+impl<'a> Default for LogConfig<'a> {
+    fn default() -> Self {
+        Self {
+            // It's important to define the log file name as a path
+            log_file_name: "./audia.log",
+            max_log_size_mb: 1,
+            log_level: "info"
         }
     }
+}
 
-    samples
+fn init_logger(config: &LogConfig) {
+    let log_config = Config::new()
+        .file_loop(config.log_file_name, LogSize::MB(config.max_log_size_mb))
+        .console()
+        .level(LevelFilter::from_str(config.log_level).unwrap_or(LevelFilter::Info))
+        .filter(ModuleFilter::new_include(vec![ String::from(APP_NAME) ]))
+        // Providing a channel length will make the log queue bounded
+        .chan_len(Some(65536));
+
+    fast_log::init(log_config).expect("Could not initialize logger");
 }
 
 fn main() -> Result<(), Error> {
     // initialise logger
-    let log_config = Config::new()
-        .console()
-        .level(LevelFilter::Info)
-        .filter(ModuleFilter::new_include(vec![ String::from("audia") ]))
-        .chan_len(Some(65536));
+    init_logger(&LogConfig::default());
 
-    fast_log::init(log_config).expect("Could not initialize logger");
+    log::info!("Initializing application");
 
-    log::info!("Initializing Audia");
+    let audio_system = AudioSystem::new(AudioSettings::default());
 
-    // generate some wave functions
-    let samples = generate_sine_wave(vec![ 440.0, 80.0, 2000.0 ], 44100.0);
-    let hann_window = hann_window(&samples);
-    let spectrum_result = samples_fft_to_spectrum(&hann_window, 44100, FrequencyLimit::Max(4000.0), Some(&divide_by_N));
-
-    if let Err(error) = &spectrum_result {
-        log::error!("Failed to get frequency spectrum: {error:?}");
-    }
-
-    let frequency_spectrum = spectrum_result.expect("Failed to get frequency spectrum");
-
-    // initialise channels
-    let (tx, rx) = crossbeam_channel::unbounded();
-
-    // initialise engine
-    let engine = engine::CpalEngine::new(tx);
-
-    // run UI
-    let flags = ui::AudiaParams {
-        engine: Box::new(engine),
-        frequency_spectrum: frequency_spectrum.data().iter().map(|(freq, amp)| (freq.val(), amp.val() * 100.0)).collect(),
-        rx
-    };
-
-    let settings = Settings::with_flags(flags);
+    let ui_params = UIParams::new(audio_system);
 
     // Note: the UI must run on the main thread
-    ui::Audia::run(settings)
+    ui::Audia::run(Settings::with_flags(ui_params))
 }

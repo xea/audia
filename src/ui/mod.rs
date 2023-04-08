@@ -1,120 +1,117 @@
+use std::mem;
+use std::thread::{JoinHandle};
 use std::time::Duration;
-use crossbeam_channel::Receiver;
-use iced::{Alignment, Application, Command, Element, executor, Length, Subscription, Theme};
+
+use iced::{Alignment, Application, Command, Element, executor, Subscription, Theme};
 use iced::time as iced_time;
-use iced::widget::{button, Column, pick_list, text};
-use plotters::series::LineSeries;
-use plotters::style::BLACK;
-use plotters_iced::{Chart, ChartBuilder, ChartWidget, DrawingBackend};
+use iced::widget::{button, Column, text};
+use plotters_iced::{DrawingBackend};
 use ringbuf::{HeapRb, Rb};
+use crate::engine::{AudioStream, AudioSystem};
 
-pub struct FreqLog {
-    pub log: [u16; 4096],
-    pub idx: usize
+use crate::ui::spectrogram::Spectrogram;
+
+mod spectrogram;
+
+pub struct UIParams {
+    pub audio_system: AudioSystem
 }
 
-impl FreqLog {
-    pub fn view(&self) -> Element<UIMessage> {
-        ChartWidget::new(self)
-            .width(Length::Units(1000))
-            .height(Length::Units(200))
-            .into()
+impl UIParams {
+    pub fn new(audio_system: AudioSystem) -> Self {
+        Self { audio_system }
     }
 }
 
-impl Chart<UIMessage> for FreqLog {
-    type State = ();
-
-    fn build_chart<DB: DrawingBackend>(&self, state: &Self::State, mut builder: ChartBuilder<DB>) {
-        let mut chart = builder
-            .set_all_label_area_size(40)
-            .build_cartesian_2d(0..4096, 0..65535)
-            .expect("Failed to build chart");
-
-        let series = LineSeries::new(self.log.iter().enumerate().map(|(x, y)| (x as i32, *y as i32)), &BLACK);
-        //let series = LineSeries::new(self.log.iter().map(|val| (*freq as i32, *amp as i32)), &BLACK);
-
-        chart.configure_mesh().draw().expect("Failed to draw mesh");
-
-        chart.draw_series(series)
-            .expect("Failed to draw series");
-    }
-}
-
-pub struct FreqAnalysis {
-    pub spectrum: Vec<(f32, f32)>
-}
-
-impl FreqAnalysis {
-    pub fn view(&self) -> Element<UIMessage> {
-        ChartWidget::new(self)
-            .width(Length::Units(1000))
-            .height(Length::Units(400))
-            .into()
-    }
-}
-
-impl Chart<UIMessage> for FreqAnalysis {
-    type State = ();
-
-    fn build_chart<DB: DrawingBackend>(&self, _state: &Self::State, mut builder: ChartBuilder<DB>) {
-        let mut chart = builder
-            .set_all_label_area_size(40)
-            .build_cartesian_2d(0..4000, 0..100)
-            .expect("Failed to build chart");
-
-        //let series = LineSeries::new((0..100).map(|x| (x, 100 - x)), &BLACK);
-        let series = LineSeries::new(self.spectrum.iter().map(|(freq, amp)| (*freq as i32, *amp as i32)), &BLACK);
-
-        chart.configure_mesh().draw().expect("Failed to draw mesh");
-
-        chart.draw_series(series)
-            .expect("Failed to draw series");
-    }
-}
-
-#[derive(Debug, PartialOrd, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum UIMessage {
-    HostChanged(String),
-    InputDeviceChanged(String),
-    RecordingStarted,
-    RecordingStopped,
-    Tick,
-    DummyMessage
-}
-
-pub struct AudiaParams {
-    pub engine: Box<dyn crate::engine::Engine>,
-    pub frequency_spectrum: Vec<(f32, f32)>,
-    pub rx: Receiver<Vec<f32>>,
+    HostChanged,
+    InputDeviceChanged,
+    StartStreaming,
+    StopStreaming,
+    StreamTick,
+    DebugEvent
 }
 
 pub struct Audia {
-    params: AudiaParams,
-    freq_anal: FreqAnalysis,
-    freq_log: FreqLog,
-    playing: bool,
-    tick_received: u32
+    stream_thread: Option<JoinHandle<()>>,
+    spectrogram: Spectrogram,
+    audio_system: AudioSystem,
+    current_stream: Option<AudioStream>
 }
 
 impl Audia {
+    fn start_streaming(&mut self) {
+        log::info!("Start streaming");
+
+        if self.stream_thread.is_none() {
+            match self.audio_system.engine.start_recording() {
+                Ok(stream) => {
+                    self.current_stream = Some(stream);
+                    /*
+                    let thread = std::thread::spawn(move || {
+                        loop {
+                            if let Ok(package) = stream.receive() {
+                                self.spectrogram.user_data += package.len();
+                                log::info!("Actually got packet");
+                            }
+                        }
+                    });
+
+                    self.stream_thread = Some(thread);
+                     */
+                },
+                Err(error) => {
+                    log::error!("Error jaj");
+                }
+            };
+
+        } else {
+            log::info!("Stream is already running");
+        }
+    }
+
+    fn stop_streaming(&mut self) {
+        log::info!("Stop streaming");
+
+        if self.current_stream.is_some() {
+            self.current_stream = None;
+            //let handle = mem::replace(&mut self.stream_thread, None).unwrap();
+            //let _ = handle.join();
+        } else {
+            log::info!("Stream has not been stopped");
+        }
+    }
+
+    fn stream_update(&mut self) {
+        if let Some(stream) = &self.current_stream {
+            if let Ok(mut packet) = stream.receive() {
+                self.spectrogram.user_data += packet.len();
+                self.spectrogram.current_buf.clear();
+                self.spectrogram.current_buf.append(&mut packet);
+            } else {
+                log::error!("Failed to receive packet");
+            }
+        } else {
+            log::info!("Stream update request but no stream :(");
+        }
+    }
 }
 
 impl Application for Audia {
     type Executor = executor::Default;
     type Message = UIMessage;
     type Theme = Theme;
-    type Flags = AudiaParams;
+    type Flags = UIParams;
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
-        let spectrum = flags.frequency_spectrum.clone();
+        let audio_system = flags.audio_system;
 
         (Self {
-            params: flags,
-            freq_anal: FreqAnalysis { spectrum },
-            freq_log: FreqLog { log: [0; 4096], idx: 0 },
-            playing: false,
-            tick_received: 0
+            stream_thread: None,
+            spectrogram: Spectrogram::new(),
+            current_stream: None,
+            audio_system
         }, Command::none())
     }
 
@@ -124,29 +121,9 @@ impl Application for Audia {
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         match message {
-            UIMessage::HostChanged(new_host) => {
-                self.params.engine.use_engine(new_host.as_str());
-            }
-            UIMessage::InputDeviceChanged(device_name) => {
-                self.params.engine.use_input_device(device_name);
-            }
-            UIMessage::RecordingStarted => {
-                self.playing = true;
-                self.params.engine.start_recording();
-            }
-            UIMessage::RecordingStopped => {
-                self.playing = false;
-                self.params.engine.stop_recording();
-            }
-            UIMessage::Tick => {
-                self.tick_received += 1;
-                {
-                    if let Ok(data) = self.params.rx.recv() {
-                        self.freq_log.log[self.freq_log.idx % 4096] = data.len().min(65535) as u16;
-                        self.freq_log.idx += 1;
-                    }
-                }
-            }
+            UIMessage::StartStreaming => self.start_streaming(),
+            UIMessage::StopStreaming => self.stop_streaming(),
+            UIMessage::StreamTick => self.stream_update(),
             _ => {
                 log::info!("Unknown event: {:?}", message);
             }
@@ -155,12 +132,17 @@ impl Application for Audia {
     }
 
     fn view(&self) -> Element<Self::Message> {
-        let button = if self.playing {
-            button("Stop").on_press(UIMessage::RecordingStopped)
+        let stream_button = if self.current_stream.is_none() {
+            button("Start streaming").on_press(UIMessage::StartStreaming)
         } else {
-            button("Record").on_press(UIMessage::RecordingStarted)
+            button("Stop streaming").on_press(UIMessage::StopStreaming)
         };
+
         Column::new()
+            .push(stream_button)
+            .push(self.spectrogram.view())
+            .push(text(format!("{}", self.spectrogram.user_data)))
+            /*
             .push(
                 pick_list(
                     self.params.engine.get_available_hosts(),
@@ -173,12 +155,8 @@ impl Application for Audia {
                     self.params.engine.get_current_input_device(),
                     UIMessage::InputDeviceChanged)
                     .placeholder("Choose an input device"))
-            .push(button)
-            //.push(button("Record").on_press(UIMessage::RecordingStarted))
-            .push(self.freq_log.view())
-            .push(self.freq_anal.view())
-            //.push(FreqAnalysis { spectrum: self.params.frequency_spectrum.clone() }.view())
-            .push(text(format!("Received ticks: {}", self.tick_received)))
+
+             */
             .padding(20)
             .spacing(10)
             .align_items(Alignment::Center)
@@ -186,9 +164,13 @@ impl Application for Audia {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        match self.playing {
-            true => iced_time::every(Duration::from_millis(10)).map(|_| UIMessage::Tick),
-            false => Subscription::none()
+        if self.current_stream.is_some() {
+            let duration = Duration::from_millis(50);
+            iced_time::every(duration).map(|_instant| UIMessage::StreamTick)
+        } else {
+            Subscription::none()
         }
     }
+
 }
+
