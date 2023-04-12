@@ -71,7 +71,7 @@ impl Audia {
                 self.spectrogram.current_buf.clear();
                 self.spectrogram.current_buf.append(&mut packet);
             } else {
-                log::error!("Failed to receive packet");
+                // There was no audio data in the stream, ignore
             }
         } else {
             log::info!("Stream update request but no stream :(");

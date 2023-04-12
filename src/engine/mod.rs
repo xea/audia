@@ -3,6 +3,8 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{Receiver, RecvError, TryRecvError};
 use ringbuf::HeapRb;
 
+pub mod pipeline;
+
 pub type AudioHostName = String;
 pub type InputDeviceName = String;
 pub type SampleType = f32;
@@ -156,18 +158,11 @@ impl Engine for CpalEngine {
                 };
 
                 let (tx, rx) = crossbeam_channel::unbounded::<PacketType>();
-                let mut counter = 0;
 
                 let stream_result = device
                     .build_input_stream(
                         &config.into(),
                         move |data: &[SampleType], _info| {
-                            counter += 1;
-
-                            if counter % 100 == 0 {
-                                println!("Current queue size: {}", tx.len());
-                            }
-
                             if let Err(error) = tx.send(data.into()) {
                                 log::error!("Failed to send stream data: {error:?}");
                             }
@@ -216,7 +211,7 @@ pub struct AudioSystem {
 impl AudioSystem {
     pub fn new(_settings: AudioSettings) -> Self {
         AudioSystem {
-            engine: Box::new(CpalEngine::default()),
+            engine: Box::<CpalEngine>::default(),
             stream: vec![]
         }
     }
