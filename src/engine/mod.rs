@@ -1,6 +1,6 @@
 use cpal::{Device, HostId, Stream, StreamError};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use crossbeam_channel::{Receiver, RecvError, TryRecvError};
+use crossbeam_channel::{Receiver, TryRecvError};
 use ringbuf::HeapRb;
 
 pub mod pipeline;

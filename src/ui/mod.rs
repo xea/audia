@@ -3,7 +3,10 @@ use std::time::Duration;
 use iced::{Alignment, Application, Command, Element, executor, Subscription, Theme};
 use iced::time as iced_time;
 use iced::widget::{button, Column, text};
-use crate::engine::{AudioStream, AudioSystem};
+use spectrum_analyzer::{FrequencyLimit, samples_fft_to_spectrum};
+use spectrum_analyzer::scaling::{divide_by_N, divide_by_N_sqrt};
+use spectrum_analyzer::windows::hann_window;
+use crate::engine::{AudioStream, AudioSystem, PacketType};
 
 use crate::ui::spectrogram::Spectrogram;
 
@@ -67,15 +70,42 @@ impl Audia {
     fn stream_update(&mut self) {
         if let Some(stream) = &self.current_stream {
             if let Ok(mut packet) = stream.receive() {
-                self.spectrogram.user_data += packet.len();
-                self.spectrogram.current_buf.clear();
-                self.spectrogram.current_buf.append(&mut packet);
+                self.update_state(&mut packet);
             } else {
                 // There was no audio data in the stream, ignore
             }
         } else {
             log::info!("Stream update request but no stream :(");
         }
+    }
+
+    fn update_state(&mut self, packet: &mut PacketType) {
+        self.spectrogram.user_data += packet.len();
+        self.spectrogram.current_buf.clear();
+        self.spectrogram.current_buf.append(packet);
+
+        self.spectrogram.freq_data.clear();
+
+        if !self.spectrogram.current_buf.is_empty() {
+            let hann_window = hann_window(self.spectrogram.current_buf.as_slice());
+            let spectrum = samples_fft_to_spectrum(
+                &hann_window,
+                48000,
+                FrequencyLimit::Max(12000.0),
+                Some(&divide_by_N_sqrt))
+                .expect("Could not extract frequncy spectrum");
+
+            let points: Vec<(i32, f32)> = spectrum.data()
+                .iter()
+                .map(|(freq, amp)| {
+                    (freq.val() as i32, amp.val() * 2048.0)
+                }).collect();
+
+            
+            self.spectrogram.peak_freq = points.iter().fold(0.0, |a, b| a.max(b.1));
+            self.spectrogram.freq_data = points;
+        };
+
     }
 }
 
@@ -121,7 +151,7 @@ impl Application for Audia {
         Column::new()
             .push(stream_button)
             .push(self.spectrogram.view())
-            .push(text(format!("{}", self.spectrogram.user_data)))
+            .push(text(format!("{:3.2}Hz {}", self.spectrogram.peak_freq, self.spectrogram.user_data)))
             /*
             .push(
                 pick_list(
