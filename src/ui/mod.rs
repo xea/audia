@@ -2,13 +2,14 @@ use std::time::Duration;
 
 use iced::{Alignment, Application, Command, Element, executor, Subscription, Theme};
 use iced::time as iced_time;
-use iced::widget::{button, Column, text};
+use iced::widget::{button, Column, pick_list, text};
 use spectrum_analyzer::{FrequencyLimit, samples_fft_to_spectrum};
 use spectrum_analyzer::scaling::{divide_by_N, divide_by_N_sqrt};
 use spectrum_analyzer::windows::hann_window;
-use crate::engine::{AudioStream, AudioSystem, PacketType};
+use crate::engine::{AudioHostName, AudioStream, AudioSystem, InputDeviceName, PacketType};
 
 use crate::ui::spectrogram::Spectrogram;
+use crate::ui::UIMessage::InputDeviceChanged;
 
 mod spectrogram;
 
@@ -24,8 +25,8 @@ impl UIParams {
 
 #[derive(Debug, Clone)]
 pub enum UIMessage {
-    HostChanged,
-    InputDeviceChanged,
+    HostChanged(String),
+    InputDeviceChanged(String),
     StartStreaming,
     StopStreaming,
     StreamTick,
@@ -93,7 +94,7 @@ impl Audia {
                 48000,
                 FrequencyLimit::Max(12000.0),
                 Some(&divide_by_N_sqrt))
-                .expect("Could not extract frequncy spectrum");
+                .expect("Could not extract frequency spectrum");
 
             let points: Vec<(i32, f32)> = spectrum.data()
                 .iter()
@@ -131,6 +132,8 @@ impl Application for Audia {
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         match message {
+            UIMessage::HostChanged(new_host) => self.audio_system.engine.use_host(AudioHostName::from(new_host.as_str())),
+            UIMessage::InputDeviceChanged(new_device) => self.audio_system.engine.use_input_device(InputDeviceName::from(new_device.as_str())),
             UIMessage::StartStreaming => self.start_streaming(),
             UIMessage::StopStreaming => self.stop_streaming(),
             UIMessage::StreamTick => self.stream_update(),
@@ -149,24 +152,21 @@ impl Application for Audia {
         };
 
         Column::new()
-            .push(stream_button)
-            .push(self.spectrogram.view())
-            .push(text(format!("{:3.2}Hz {}", self.spectrogram.peak_freq, self.spectrogram.user_data)))
-            /*
             .push(
                 pick_list(
-                    self.params.engine.get_available_hosts(),
-                    self.params.engine.get_current_engine().map(|e| e.into()),
+                    self.audio_system.engine.get_available_hosts(),
+                    self.audio_system.engine.get_current_host().map(|e| e.into()),
                     UIMessage::HostChanged)
                     .placeholder("Choose an audio host"))
             .push(
                 pick_list(
-                    self.params.engine.get_input_devices(),
-                    self.params.engine.get_current_input_device(),
+                    self.audio_system.engine.get_input_devices(),
+                    self.audio_system.engine.get_current_input_device(),
                     UIMessage::InputDeviceChanged)
                     .placeholder("Choose an input device"))
-
-             */
+            .push(stream_button)
+            .push(self.spectrogram.view())
+            .push(text(format!("{:3.2}Hz {}", self.spectrogram.peak_freq, self.spectrogram.user_data)))
             .padding(20)
             .spacing(10)
             .align_items(Alignment::Center)
