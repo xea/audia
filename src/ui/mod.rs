@@ -109,34 +109,6 @@ impl Audia {
 
             self.spectrogram.peak_freq = points.iter().fold(0.0, |a, b| a.max(b.1));
             self.spectrogram.freq_data = points;
-
-            /*
-        self.spectrogram.user_data += packet.len();
-        self.spectrogram.current_buf.clear();
-        self.spectrogram.current_buf.append(packet);
-
-        self.spectrogram.freq_data.clear();
-
-        if !self.spectrogram.current_buf.is_empty() {
-            let hann_window = hann_window(self.spectrogram.current_buf.as_slice());
-            let spectrum = samples_fft_to_spectrum(
-                &hann_window,
-                48000,
-                FrequencyLimit::Max(12000.0),
-                Some(&divide_by_N_sqrt))
-                .expect("Could not extract frequency spectrum");
-
-            let points: Vec<(i32, f32)> = spectrum.data()
-                .iter()
-                .map(|(freq, amp)| {
-                    (freq.val() as i32, amp.val() * 2048.0)
-                }).collect();
-
-            
-            self.spectrogram.peak_freq = points.iter().fold(0.0, |a, b| a.max(b.1));
-            self.spectrogram.freq_data = points;
-        };
-         */
         }
     }
 }
