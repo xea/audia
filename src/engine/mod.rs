@@ -1,4 +1,4 @@
-use cpal::{Device, HostId, Stream, StreamError};
+use cpal::{BufferSize, Device, HostId, Stream, StreamConfig, StreamError};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{Receiver, TryRecvError};
 
@@ -150,7 +150,10 @@ impl Engine for CpalEngine {
             }
 
             if let Ok(config) = device.default_input_config() {
-                log::info!("Default input config: {:?}", config);
+                let mut sconfig = StreamConfig::from(config);
+                // Set a fixed buffer size of 256 bytes
+                sconfig.buffer_size = BufferSize::Fixed(256);
+                log::info!("Default input config: {:?}", sconfig);
 
                 let err_fn = move |err: StreamError| {
                     log::error!("An error occurred during reading from the stream: {:?}", err);
@@ -160,7 +163,7 @@ impl Engine for CpalEngine {
 
                 let stream_result = device
                     .build_input_stream(
-                        &config.into(),
+                        &sconfig.into(),
                         move |data: &[SampleType], _info| {
                             if let Err(error) = tx.send(data.into()) {
                                 log::error!("Failed to send stream data: {error:?}");

@@ -4,14 +4,16 @@ use iced::{Alignment, Application, Command, Element, executor, Subscription, The
 use iced::time as iced_time;
 use iced::widget::{button, Column, pick_list, text};
 use spectrum_analyzer::{FrequencyLimit, samples_fft_to_spectrum};
-use spectrum_analyzer::scaling::{divide_by_N, divide_by_N_sqrt};
+use spectrum_analyzer::scaling::divide_by_N_sqrt;
 use spectrum_analyzer::windows::hann_window;
-use crate::engine::{AudioHostName, AudioStream, AudioSystem, InputDeviceName, PacketType};
 
+use crate::engine::{AudioHostName, AudioStream, AudioSystem, InputDeviceName, PacketType};
 use crate::ui::spectrogram::Spectrogram;
-use crate::ui::UIMessage::InputDeviceChanged;
 
 mod spectrogram;
+
+// this needs to be a power of two
+const RECEIVE_PACKET_SIZE: usize = 1024;
 
 pub struct UIParams {
     pub audio_system: AudioSystem
@@ -36,7 +38,7 @@ pub enum UIMessage {
 pub struct Audia {
     spectrogram: Spectrogram,
     audio_system: AudioSystem,
-    current_stream: Option<AudioStream>
+    current_stream: Option<AudioStream>,
 }
 
 impl Audia {
@@ -81,6 +83,34 @@ impl Audia {
     }
 
     fn update_state(&mut self, packet: &mut PacketType) {
+        self.spectrogram.current_buf.append(packet);
+
+        while self.spectrogram.current_buf.len() >= RECEIVE_PACKET_SIZE {
+            let current_packet: PacketType = self.spectrogram.current_buf.drain(0..RECEIVE_PACKET_SIZE).collect();
+
+            self.spectrogram.user_data += RECEIVE_PACKET_SIZE;
+
+            self.spectrogram.freq_data.clear();
+
+            let hann_window = hann_window(current_packet.as_slice());
+            let spectrum = samples_fft_to_spectrum(
+                &hann_window,
+                48000,
+                FrequencyLimit::Max(12000.0),
+                Some(&divide_by_N_sqrt))
+                .expect("Could not extract frequency spectrum");
+
+            let points: Vec<(i32, f32)> = spectrum.data()
+                .iter()
+                .map(|(freq, amp)| {
+                    (freq.val() as i32, amp.val() * 2048.0)
+                }).collect();
+
+
+            self.spectrogram.peak_freq = points.iter().fold(0.0, |a, b| a.max(b.1));
+            self.spectrogram.freq_data = points;
+
+            /*
         self.spectrogram.user_data += packet.len();
         self.spectrogram.current_buf.clear();
         self.spectrogram.current_buf.append(packet);
@@ -106,7 +136,8 @@ impl Audia {
             self.spectrogram.peak_freq = points.iter().fold(0.0, |a, b| a.max(b.1));
             self.spectrogram.freq_data = points;
         };
-
+         */
+        }
     }
 }
 
@@ -122,7 +153,7 @@ impl Application for Audia {
         (Self {
             spectrogram: Spectrogram::new(),
             current_stream: None,
-            audio_system
+            audio_system,
         }, Command::none())
     }
 

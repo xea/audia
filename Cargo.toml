@@ -10,7 +10,7 @@ keywords = [ ]
 [dependencies]
 cpal = "0.15"
 iced = { version = "0.10", features = [ "smol", "canvas" ] }
-plotters = { version = "0.3.4", default_features = false, features = [ "line_series" ] }
+plotters = { version = "0.3", default_features = false, features = [ "line_series" ] }
 plotters-iced = "0.9"
 fast_log = "1.6"
 log = "0.4"
@@ -19,6 +19,6 @@ crossbeam-channel = "0.5"
 ringbuf = "0.3"
 
 #rustfft = "6.1.0"
-spectrum-analyzer = "1.2"
+spectrum-analyzer = "1.4"
 
-fundsp = "*"
+fundsp = "0.15"
