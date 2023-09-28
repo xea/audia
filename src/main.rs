@@ -8,6 +8,7 @@ use log::LevelFilter;
 use crate::engine::{AudioSettings, AudioSystem};
 use crate::ui::UIParams;
 
+mod data;
 mod engine;
 mod ui;
 

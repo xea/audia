@@ -6,6 +6,7 @@ pub mod pipeline;
 
 pub type AudioHostName = String;
 pub type InputDeviceName = String;
+pub type OutputDeviceName = String;
 pub type SampleType = f32;
 pub type PacketType = Vec<SampleType>;
 
@@ -37,6 +38,11 @@ pub trait Engine {
     fn get_current_input_device(&self) -> Option<InputDeviceName>;
     fn use_input_device(&mut self, device_name: InputDeviceName);
 
+    // Output device operations
+    fn get_output_devices(&self) -> Vec<OutputDeviceName>;
+    fn get_current_output_device(&self) -> Option<OutputDeviceName>;
+    fn use_output_device(&mut self, device_name: OutputDeviceName);
+
     // Recording operations
     fn start_recording(&mut self) -> Result<AudioStream, AudiaError>;
     fn stop_recording(&mut self);
@@ -46,6 +52,7 @@ pub trait Engine {
 pub struct CpalEngine {
     current_host: Option<HostId>,
     current_input_device: Option<Device>,
+    current_output_device: Option<Device>,
     current_stream: Option<Stream>
 }
 
@@ -53,13 +60,6 @@ impl CpalEngine {
 }
 
 impl CpalEngine {
-    pub fn new() -> Self {
-        Self {
-            current_host: None,
-            current_input_device: None,
-            current_stream: None
-        }
-    }
 
     fn run_stream(&mut self, stream: Stream, rx: Receiver<PacketType>) -> Result<AudioStream, AudiaError> {
         if let Err(error) = stream.play() {
@@ -80,6 +80,7 @@ impl Default for CpalEngine {
         Self {
             current_host: Some(cpal::default_host().id()),
             current_input_device: cpal::default_host().default_input_device(),
+            current_output_device: cpal::default_host().default_output_device(),
             current_stream: None
         }
     }
@@ -138,6 +139,37 @@ impl Engine for CpalEngine {
         }
     }
 
+    fn get_output_devices(&self) -> Vec<OutputDeviceName> {
+        if let Some(host_id) = self.current_host {
+            let host = cpal::host_from_id(host_id).expect("Could not open audio host");
+            let devices = host.output_devices().expect("Could not find ouput devices on host");
+
+            devices.into_iter()
+                .map(|d| d.name().unwrap_or(String::from("No device name")))
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
+    fn get_current_output_device(&self) -> Option<OutputDeviceName> {
+        self.current_output_device.as_ref()
+            .map(|output_device| output_device.name()
+                .unwrap_or(String::from("No device name found")))
+    }
+
+    fn use_output_device(&mut self, device_name: OutputDeviceName) {
+        if let Some(host_id) = self.current_host {
+            let host = cpal::host_from_id(host_id).expect("Could not open audio host");
+            for output_device in host.output_devices().expect("Could not open output devices on host") {
+                if output_device.name().map(|name| name.eq(device_name.as_str())).unwrap_or(false) {
+                    self.current_output_device = Some(output_device);
+                    log::info!("Using input device {}", device_name);
+                }
+            }
+        }
+    }
+
     fn start_recording(&mut self) -> Result<AudioStream, AudiaError> {
         log::info!("Recording started using {}", self.get_current_input_device().unwrap_or(String::from("No input device name")));
 
@@ -149,11 +181,8 @@ impl Engine for CpalEngine {
                 }
             }
 
-            if let Ok(config) = device.default_input_config() {
-                let mut sconfig = StreamConfig::from(config);
-                // Set a fixed buffer size of 256 bytes
-                sconfig.buffer_size = BufferSize::Fixed(256);
-                log::info!("Default input config: {:?}", sconfig);
+            if let Ok(default_config) = device.default_input_config() {
+                log::info!("Default input config: {:?}", default_config);
 
                 let err_fn = move |err: StreamError| {
                     log::error!("An error occurred during reading from the stream: {:?}", err);
@@ -161,9 +190,12 @@ impl Engine for CpalEngine {
 
                 let (tx, rx) = crossbeam_channel::unbounded::<PacketType>();
 
+                let mut config = StreamConfig::from(default_config);
+                config.buffer_size = BufferSize::Fixed(256);
+
                 let stream_result = device
                     .build_input_stream(
-                        &sconfig.into(),
+                        &config.into(),
                         move |data: &[SampleType], _info| {
                             if let Err(error) = tx.send(data.into()) {
                                 log::error!("Failed to send stream data: {error:?}");

@@ -22,3 +22,5 @@ ringbuf = "0.3"
 spectrum-analyzer = "1.4"
 
 fundsp = "0.15"
+
+rockysmithereens_parser = { git = "https://github.com/tversteeg/rockysmithereens.git", features = [ "profile-with-tracing" ] }

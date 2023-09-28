@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use iced::{Alignment, Application, Command, Element, executor, Subscription, Theme};
 use iced::time as iced_time;
-use iced::widget::{button, Column, pick_list, text};
+use iced::widget::{button, Column, pick_list, Row, text};
 use spectrum_analyzer::{FrequencyLimit, samples_fft_to_spectrum};
-use spectrum_analyzer::scaling::divide_by_N_sqrt;
+use spectrum_analyzer::scaling::{divide_by_N, divide_by_N_sqrt};
 use spectrum_analyzer::windows::hann_window;
 
 use crate::engine::{AudioHostName, AudioStream, AudioSystem, InputDeviceName, PacketType};
@@ -13,7 +13,7 @@ use crate::ui::spectrogram::Spectrogram;
 mod spectrogram;
 
 // this needs to be a power of two
-const RECEIVE_PACKET_SIZE: usize = 1024;
+const RECEIVE_PACKET_SIZE: usize = 256;
 
 pub struct UIParams {
     pub audio_system: AudioSystem
@@ -29,6 +29,7 @@ impl UIParams {
 pub enum UIMessage {
     HostChanged(String),
     InputDeviceChanged(String),
+    OutputDeviceChanged(String),
     StartStreaming,
     StopStreaming,
     StreamTick,
@@ -38,7 +39,7 @@ pub enum UIMessage {
 pub struct Audia {
     spectrogram: Spectrogram,
     audio_system: AudioSystem,
-    current_stream: Option<AudioStream>,
+    current_stream: Option<AudioStream>
 }
 
 impl Audia {
@@ -95,8 +96,9 @@ impl Audia {
             let hann_window = hann_window(current_packet.as_slice());
             let spectrum = samples_fft_to_spectrum(
                 &hann_window,
+
                 48000,
-                FrequencyLimit::Max(12000.0),
+                FrequencyLimit::Max(2200.0),
                 Some(&divide_by_N_sqrt))
                 .expect("Could not extract frequency spectrum");
 
@@ -107,7 +109,14 @@ impl Audia {
                 }).collect();
 
 
-            self.spectrogram.peak_freq = points.iter().fold(0.0, |a, b| a.max(b.1));
+            self.spectrogram.peak_freq = points.iter().fold((0, 0.0), |a, b| {
+                if a.1 >= b.1 {
+                    a
+                } else {
+                    *b
+                }
+            }).0 as f32;
+            //self.spectrogram.peak_freq = points.iter().fold(0.0, |a, b| a.max(b.0 as f32));
             self.spectrogram.freq_data = points;
         }
     }
@@ -125,7 +134,7 @@ impl Application for Audia {
         (Self {
             spectrogram: Spectrogram::new(),
             current_stream: None,
-            audio_system,
+            audio_system
         }, Command::none())
     }
 
@@ -156,17 +165,34 @@ impl Application for Audia {
 
         Column::new()
             .push(
-                pick_list(
-                    self.audio_system.engine.get_available_hosts(),
-                    self.audio_system.engine.get_current_host().map(|e| e.into()),
-                    UIMessage::HostChanged)
-                    .placeholder("Choose an audio host"))
+                Row::new()
+                .push(text("Audio host: "))
+                    .push(
+                        pick_list(
+                            self.audio_system.engine.get_available_hosts(),
+                            self.audio_system.engine.get_current_host().map(|e| e.into()),
+                            UIMessage::HostChanged)
+                            .placeholder("Choose an audio host")))
             .push(
-                pick_list(
-                    self.audio_system.engine.get_input_devices(),
-                    self.audio_system.engine.get_current_input_device(),
-                    UIMessage::InputDeviceChanged)
-                    .placeholder("Choose an input device"))
+                Row::new()
+                    .spacing(5)
+                    .push(text("Input device"))
+                    .push(
+                        pick_list(
+                            self.audio_system.engine.get_input_devices(),
+                            self.audio_system.engine.get_current_input_device(),
+                            UIMessage::InputDeviceChanged)
+                            .placeholder("Choose an input device")))
+            .push(
+                Row::new()
+                    .spacing(5)
+                    .push(text("Output device"))
+                    .push(
+                        pick_list(
+                            self.audio_system.engine.get_output_devices(),
+                            self.audio_system.engine.get_current_output_device(),
+                            UIMessage::OutputDeviceChanged)
+                            .placeholder("Choose an output device")))
             .push(stream_button)
             .push(self.spectrogram.view())
             .push(text(format!("{:3.2}Hz {}", self.spectrogram.peak_freq, self.spectrogram.user_data)))
